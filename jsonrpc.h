@@ -25,7 +25,7 @@
 #ifndef _JSONRPC_H_
 #define _JSONRPC_H_
 
-#define JSONRPC_DEFAULT_HTABLE_SIZE 2
+#define JSONRPC_DEFAULT_HTABLE_SIZE 500
 #define JSONRPC_MAX_ID 1000000
 
 #include <json.h>

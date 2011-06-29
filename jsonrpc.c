@@ -133,6 +133,8 @@ int store_event(struct jsonrpc_event* ev) {
 		struct jsonrpc_event* i;
 		for(i=existing; i; i=i->next) {
 			if (i == NULL) {
+				i = ev;
+				LM_ERR("!!!!!!!");
 				return 1;
 			}
 			if (i->next == NULL) {

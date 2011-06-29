@@ -178,17 +178,13 @@ void socket_cb(int fd, short event, void *arg)
 		LM_ERR("bad netstring (%d)\n", retval);
 		return;
 	}	
-	
-	LM_ERR("netstring read: (%s)\n", netstring);
-	
+		
 	struct json_object *res = json_tokener_parse(netstring);
 
 	if (!res) {
 		LM_ERR("netstring could not be parsed: (%s)\n", netstring);
 		return;
 	}
-
-	LM_ERR("netstring parsed: (%s)\n", netstring);	
 	handle_jsonrpc_response(res);
-	//pkg_free(*netstring);
+	pkg_free(netstring);
 }
