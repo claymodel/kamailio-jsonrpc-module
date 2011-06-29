@@ -72,8 +72,8 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 		}
 	}
 
-	unsigned int hash_index;
-	unsigned int label;
+	unsigned int hash_index = NULL;
+	unsigned int label = NULL;
 
 	if (tmb.t_suspend(_m, &hash_index, &label) < 0) {
 		LM_ERR("t_suspend() failed\n");
@@ -98,7 +98,8 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 	if (write(cmd_pipe, &cmd, sizeof(cmd)) != sizeof(cmd)) {
 		LM_ERR("failed to write to io pipe: %s\n", strerror(errno));
 		return -1;
-	}	
+	}
+
 	return 0;
 }
 

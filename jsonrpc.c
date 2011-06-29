@@ -41,11 +41,12 @@ struct jsonrpc_event {
 	jsonrpc_event_t *next;
 };
 
-struct jsonrpc_event * event_table[JSONRPC_DEFAULT_HTABLE_SIZE];
+struct jsonrpc_event * event_table[JSONRPC_DEFAULT_HTABLE_SIZE] = {0};
 int next_id = 1;
 
 struct jsonrpc_event* get_event(int id);
 int store_event(struct jsonrpc_event* ev);
+
 
 json_object* build_jsonrpc_request(enum jsonrpc_t *req_type, char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*))
 {
@@ -79,14 +80,18 @@ int handle_jsonrpc_response(json_object *response)
 	json_object *_id = json_object_object_get(response, "id");
 	int id = json_object_get_int(_id);
 	
-	if (!(ev = get_event(id)))
+	if (!(ev = get_event(id))) {
+		json_object_put(response);
 		return -1;
-			
+	}
+	
 	json_object *result = json_object_object_get(response, "result");
+	
 	ev->cbfunc(result, ev->cbdata);
+	json_object_put(response);
+	pkg_free(ev);
 	return 1;
 }
-
 
 int id_hash(int id) {
 	return (id % JSONRPC_DEFAULT_HTABLE_SIZE);
@@ -95,15 +100,24 @@ int id_hash(int id) {
 struct jsonrpc_event* get_event(int id) {
 	int key = id_hash(id);
 
-	struct jsonrpc_event* ev;
+	struct jsonrpc_event *ev, *prev_ev = NULL;
 	ev = event_table[key];
-	while (!ev || ev->id != id) {
+	
+	while (ev && ev->id != id) {
+		prev_ev = ev;
 		if (!(ev = ev->next)) {
 			break;
 		};
 	}
-	if (ev && ev->id == id)
+	
+	if (ev && ev->id == id) {
+		if (prev_ev != NULL) {
+			prev_ev-> next = ev->next;
+		} else {
+			event_table[key] = NULL;
+		}
 		return ev;
+	}
 
 	LM_ERR("event for response id %d (key %d) was not found.\n", id, key);
 	return 0;
@@ -113,14 +127,14 @@ int store_event(struct jsonrpc_event* ev) {
 	int key = id_hash(ev->id);
 	struct jsonrpc_event* existing;
 
+//	LM_INFO("storing rpc id %d\n", ev->id);
+
 	if ((existing = event_table[key])) { /* collision */
 		struct jsonrpc_event* i;
 		for(i=existing; i; i=i->next) {
 			if (i == NULL) {
-				LM_ERROR("i == NULL!!!\n");
 				return 1;
 			}
-			LM_INFO("i->id %d\n", i->id);
 			if (i->next == NULL) {
 				i->next = ev;
 				return 1;

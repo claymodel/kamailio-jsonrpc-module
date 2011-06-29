@@ -12,6 +12,8 @@
 #include <math.h>
 #include "netstring.h"
 
+#include "../../sr_module.h"
+
 /* Reads a netstring from a `buffer` of length `buffer_length`. Writes
    to `netstring_start` a pointer to the beginning of the string in
    the buffer, and to `netstring_length` the length of the
@@ -97,6 +99,7 @@ size_t netstring_encode_new(char **netstring, char *data, size_t len) {
     ns[2] = ',';
   } else {
     num_len = (size_t)ceil(log10((double)len + 1));
+		LM_INFO("num_len: %d\n", num_len);
     ns = malloc(num_len + len + 2);
     sprintf(ns, "%lu:", (unsigned long)len);
     memcpy(ns + num_len + 1, data, len);
