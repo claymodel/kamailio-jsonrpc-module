@@ -1,7 +1,7 @@
 /**
  * $Id$
  *
- * Copyright (C) 2011 FlowRoute LLC (flowroute.com)
+ * Copyright (C) 2011 Flowroute LLC (flowroute.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
