@@ -13,6 +13,88 @@
 #include "netstring.h"
 
 #include "../../sr_module.h"
+#include "../../mem/mem.h"
+
+
+
+int netstring_read_fd(int fd, char **netstring) {
+  int i, bytes;
+	size_t len = 0;
+
+ 	*netstring = NULL;
+
+	char buffer[10]={0};
+	
+	/* Peek at first 10 bytes, to get length and colon */
+	bytes = recv(fd,buffer,10,MSG_PEEK);
+
+	LM_INFO("We read %d bytes in netstring_read (peek) <%s>\n", bytes, buffer);
+	
+	if (bytes<3) return NETSTRING_ERROR_TOO_SHORT;
+	
+  /* No leading zeros allowed! */
+  if (buffer[0] == '0' && isdigit(buffer[1]))
+    return NETSTRING_ERROR_LEADING_ZERO;
+
+	LM_INFO("leading zero check passed in netstring_read (peek)\n");
+
+  /* The netstring must start with a number */
+  if (!isdigit(buffer[0])) return NETSTRING_ERROR_NO_LENGTH;
+
+	LM_INFO("leading digit check passed in netstring_read (peek)\n");
+
+  /* Read the number of bytes */
+  for (i = 0; i < bytes && isdigit(buffer[i]); i++) {
+    /* Error if more than 9 digits */
+    if (i >= 9) return NETSTRING_ERROR_TOO_LONG;
+    /* Accumulate each digit, assuming ASCII. */
+    len = len*10 + (buffer[i] - '0');
+  }
+
+	LM_INFO("len read in netstring_read (peek) -- %d\n", len);
+
+
+  /* Read the colon */
+  if (buffer[i++] != ':') return NETSTRING_ERROR_NO_COLON;
+	
+	LM_INFO("all checks pass in netstring_read (peek)\n");
+
+	/* Read the whole string from the buffer */
+	size_t read_len = i+len+1;
+	char *buffer2 = pkg_malloc(read_len);
+	bytes = recv(fd,buffer2,read_len,0);
+
+	LM_INFO("We read %d bytes in netstring_read <%s>\n", bytes, buffer2);
+
+  /* Make sure we got the whole netstring */
+  if (read_len > bytes) return NETSTRING_ERROR_TOO_SHORT;
+	LM_INFO("whole string check passed\n");
+	
+  /* Test for the trailing comma */
+  if (buffer2[read_len-1] != ',') return NETSTRING_ERROR_NO_COMMA;
+	LM_INFO("comma check passed\n");
+
+	buffer2[read_len-1] = '\0';
+	
+	// int x;
+	// 	
+	// for(x=0;x<=read_len-i;x++) {
+	// 	buffer2[x]=buffer2[x+i];
+	// 	LM_INFO("copying: <%s>\n", &buffer2[x]);
+	// }
+	// 
+	// LM_INFO("final buffer: <%s>\n", buffer2);
+	// 
+	// netstring = &buffer2;
+
+	*netstring = buffer2;
+	*netstring+=i;
+	
+	LM_INFO("final netstring: ");
+	LM_INFO("<%s>\n", *netstring);
+  return 0;
+}
+
 
 /* Reads a netstring from a `buffer` of length `buffer_length`. Writes
    to `netstring_start` a pointer to the beginning of the string in
@@ -37,6 +119,7 @@
    Example:
       if (netstring_read("3:foo,", 6, &str, &len) < 0) explode_and_die();
  */
+
 int netstring_read(char *buffer, size_t buffer_length,
 		   char **netstring_start, size_t *netstring_length) {
   int i;
@@ -99,7 +182,6 @@ size_t netstring_encode_new(char **netstring, char *data, size_t len) {
     ns[2] = ',';
   } else {
     num_len = (size_t)ceil(log10((double)len + 1));
-		LM_INFO("num_len: %d\n", num_len);
     ns = malloc(num_len + len + 2);
     sprintf(ns, "%lu:", (unsigned long)len);
     memcpy(ns + num_len + 1, data, len);

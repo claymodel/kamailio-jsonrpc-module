@@ -8,6 +8,8 @@
 
 #include <string.h>
 
+int netstring_read_fd(int fd, char **netstring);
+
 int netstring_read(char *buffer, size_t buffer_length,
 		   char **netstring_start, size_t *netstring_length);
 

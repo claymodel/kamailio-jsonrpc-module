@@ -170,44 +170,25 @@ void socket_cb(int fd, short event, void *arg)
 		
 	struct event *ev = (struct event*)arg;
 	
-	int bytes = 0;
-	while (1) {
-		char buffer[JSONRPC_BUFFER_SIZE] = {0};
-	  int new_bytes = recv(fd,buffer,JSONRPC_BUFFER_SIZE,0);
-		if (new_bytes < 0) {
-			LM_ERR("recv failed: %s (%d).\n", strerror(errno), errno);
-			return;
-		}
-		
-		bytes += new_bytes;
-	
-	  if (new_bytes) {
-		  char *netstring;
-		  size_t netstring_len;
-		  int retval = netstring_read(buffer, bytes, &netstring, &netstring_len);
-		
-		
-		} else if (bytes==0){
-			LM_ERR("socket closed...what now?\n");
-			event_del(ev);
-			return;
-		} else {
-			return;
-		}
-		
-	}
-	
-	// char response[bytes];
-	// strcpy(response,buffer);
+	char *netstring;
 
+	int retval = netstring_read_fd(fd, &netstring);
+	
 	if (retval != 0) {
-		LM_ERR("bad netstring %s (%d)\n", response, retval);
+		LM_ERR("bad netstring (%d)\n", retval);
 		return;
 	}	
 	
-	netstring[netstring_len] = '\0';
+	LM_ERR("netstring read: (%s)\n", netstring);
 	
 	struct json_object *res = json_tokener_parse(netstring);
+
+	if (!res) {
+		LM_ERR("netstring could not be parsed: (%s)\n", netstring);
+		return;
+	}
+
+	LM_ERR("netstring parsed: (%s)\n", netstring);	
 	handle_jsonrpc_response(res);
-	//pkg_free(buffer);
+	//pkg_free(*netstring);
 }

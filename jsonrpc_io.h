@@ -37,7 +37,7 @@ struct jsonrpc_pipe_cmd {
 	char *method, *params, *cb_route;
 	unsigned int t_hash, t_label;
 	pv_spec_t *cb_pv;
-	struct sip_message *msg;
+	struct sip_msg *msg;
 };
 
 int jsonrpc_io_child_process(int data_pipe, char* host, int port);
