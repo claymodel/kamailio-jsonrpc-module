@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding='ISO-8859-1'?>
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.4//EN"
+"http://www.oasis-open.org/docbook/xml/4.4/docbookx.dtd" [
+
+<!-- Include general documentation entities -->
+<!ENTITY % docentities SYSTEM "../../../docbook/entities.xml">
+%docentities;
+
+]>
+<!-- Module User's Guide -->
+
+<chapter>
+
+	<title>&adminguide;</title>
+
+	<section>
+		<title>Overview</title>
+		<para>
+			This module provides access to json-rpc services (operating over TCP/Netstrings).
+		</para>
+		<para>
+			This module uses t_suspend() and t_continue() from the TM module.
+		</para>
+		<para>
+			Note that after invoking an asyncronous operation, the processing
+			will continue later, in another application process. Therefore, do not
+			rely on variables stored in private memory, use shared memory if you
+			want to get values after the processing is resumend (e.g., $shv(...)
+			or htable $sht(...)).
+		</para>
+	</section>
+
+	<section>
+		<title>Dependencies</title>
+		<section>
+			<title>&kamailio; Modules</title>
+			<para>
+				The following modules must be loaded before this module:
+				<itemizedlist>
+					<listitem>
+						<para>
+							<emphasis>tm</emphasis> - transaction management.
+						</para>
+					</listitem>
+				</itemizedlist>
+			</para>
+		</section>
+		<section>
+			<title>External Libraries or Applications</title>
+			<para>
+				The following libraries or applications must be installed before running
+				&kamailio; with this module loaded:
+				<itemizedlist>
+					<listitem>
+						<para>
+							<emphasis>libjson</emphasis> - http://metaparadigm.com/json-c/
+						</para>
+					</listitem>
+				</itemizedlist>
+			</para>
+		</section>
+	</section>
+	<section>
+		<title>Exported Parameters</title>
+		<section>
+			<title><varname>remote_host</varname> (string)</title>
+			<para>
+				The hostname for the remote jsonrpc service.
+			</para>
+			<example>
+				<title>Set <varname>remote_host</varname> parameter</title>
+				<programlisting format="linespecific">
+					...
+					modparam("jsonrpc", "remote_host", "localhost")
+					...
+				</programlisting>
+			</example>
+		</section>
+		<section>
+			<title><varname>remote_port</varname> (int)</title>
+			<para>
+				The port for the remote jsonrpc service.
+			</para>
+			<example>
+				<title>Set <varname>remote_port</varname> parameter</title>
+				<programlisting format="linespecific">
+					...
+					modparam("jsonrpc", "remote_port", 9999)
+					...
+				</programlisting>
+			</example>
+		</section>
+	</section>
+	<section>
+		<title>Exported Functions</title>
+		<section>
+			<title>
+				<function moreinfo="none">jsonrpc_request(method, parameters, routename, result_var)</function>
+			</title>
+			<para>
+				Invoke the remote 'method' with the given 'parameters'. 
+				When the response is received, continue processing of the SIP request
+				with the route[routename].
+			</para>
+			<para>
+				The method, parameters, and routename can be a static string or 
+				a dynamic string value with config variables.
+			</para>
+			<para>
+				The result is stored in the pseudo-variable 'destination'. Since this 
+				variable is set <emphasis>after</emphasis> the response is recieved,
+				it is possible to use a $var for this parameter.
+			</para>
+			<para>
+				Since the SIP request handling is resumed in another process,
+				the config file execution is lost. As mentioned above, only 
+				shared variables ($shv, etc) should be used for any value that
+				will be needed when the script is resumed.
+			</para>
+			<example>
+				<title><function>jsonrpc_request</function> usage</title>
+				<programlisting format="linespecific">
+					...
+					jsonrpc_request("get_user", {'id': 1234}", "RESPONSE", "$var(result)");
+					...
+					route[RESPONSE] {
+						xlog("$var(result)");
+						send_reply("404", "Not Found");
+						exit;
+					}
+					...
+				</programlisting>
+			</example>
+		</section>
+	</section>
+</chapter>
+
