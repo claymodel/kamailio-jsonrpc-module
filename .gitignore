@@ -2,3 +2,8 @@
 *.o
 *.so
 *.lst
+*.tar.gz
+*.swp
+tags
+TAGS
+doc/*.txt
