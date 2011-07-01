@@ -41,5 +41,6 @@ struct jsonrpc_pipe_cmd {
 };
 
 int jsonrpc_io_child_process(int data_pipe, char* host, int port);
+void free_pipe_cmd(struct jsonrpc_pipe_cmd *cmd); 
 
 #endif /* _JSONRPC_IO_H_ */

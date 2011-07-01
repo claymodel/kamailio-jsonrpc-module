@@ -1,0 +1,6 @@
+* Support Notifications
+* Support Multiple Servers -- LB & Failover
+* Implement Timeouts
+* Close/reopen socket after R&W error or bad netstring received
+* Handle OOM errors on malloc
+

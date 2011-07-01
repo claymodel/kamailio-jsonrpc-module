@@ -126,7 +126,7 @@ int result_cb(json_object *result, char *data) {
 	tmb.t_continue(cmd->t_hash, cmd->t_label, a);	
 	
 	json_object_put(result);
-	shm_free(cmd);
+	free_pipe_cmd(cmd);
 	return 0;
 }
 
@@ -152,7 +152,7 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 	char *json = (char*)json_object_get_string(req);
 
 	char *ns; size_t bytes;
-  bytes = netstring_encode_new(&ns, json, (size_t)strlen(json));
+	bytes = netstring_encode_new(&ns, json, (size_t)strlen(json));
 
 	if (send(sockfd,ns,bytes,0) != bytes) {
 		LM_ERR("send failed!!!!!!!\n");
@@ -176,6 +176,7 @@ void socket_cb(int fd, short event, void *arg)
 	
 	if (retval != 0) {
 		LM_ERR("bad netstring (%d)\n", retval);
+		
 		return;
 	}	
 		
@@ -187,4 +188,16 @@ void socket_cb(int fd, short event, void *arg)
 	}
 	handle_jsonrpc_response(res);
 	pkg_free(netstring);
+}
+
+void free_pipe_cmd(struct jsonrpc_pipe_cmd *cmd) {
+	if (cmd->method) 
+		shm_free(cmd->method);
+	if (cmd->params)
+		shm_free(cmd->params);
+	if (cmd->cb_route)
+		shm_free(cmd->cb_route);
+	if (cmd->cb_pv)
+		shm_free(cmd->cb_pv);
+	shm_free(cmd);
 }
