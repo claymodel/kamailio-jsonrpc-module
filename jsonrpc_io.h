@@ -25,17 +25,17 @@
 #ifndef _JSONRPC_IO_H_
 #define _JSONRPC_IO_H_
 
-#define JSONRPC_BUFFER_SIZE 2048
 #include "../../route_struct.h"
 #include "../../pvar.h"
 
-/*
-static char* remote_host;
-static int   remote_port;
-*/
 #define JSONRPC_SERVER_CONNECTED    1
 #define JSONRPC_SERVER_DISCONNECTED 2
 #define JSONRPC_SERVER_FAILURE      3
+
+/* interval at which failed servers are retried */
+#define JSONRPC_RECONNECT_INTERVAL  3
+
+//#define JSONRPC_BUFFER_SIZE 2048
 
 struct jsonrpc_pipe_cmd 
 {

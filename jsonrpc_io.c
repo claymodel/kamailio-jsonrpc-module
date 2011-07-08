@@ -45,6 +45,8 @@ struct jsonrpc_server {
 	char *host;
 	int  port, socket, status;
 	struct jsonrpc_server *next;
+	struct event *ev;
+	struct itimerspec *timer;
 };
 
 struct jsonrpc_server_group {
@@ -63,6 +65,7 @@ int  set_non_blocking(int fd);
 int  parse_servers(char *_servers, struct jsonrpc_server_group **group_ptr);
 int  connect_servers(struct jsonrpc_server_group *group);
 int  connect_server(struct jsonrpc_server *server);
+int  handle_server_failure(struct jsonrpc_server *server);
 
 int jsonrpc_io_child_process(int cmd_pipe, char* _servers)
 {
@@ -150,13 +153,13 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 				if (send(s->socket, ns, bytes, 0) == bytes)
 				{
 					sent = 1;
-					g->next_server = s->next;
 					LM_INFO("Message Sent (%d bytes)\n", bytes);
 					break;
 				} else {
-					s->status = JSONRPC_SERVER_FAILURE;
+					handle_server_failure(s);
 				}
 			}
+			g->next_server = s->next;
 		}
 		if (sent) {
 			break;
@@ -177,13 +180,13 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 
 void socket_cb(int fd, short event, void *arg)
 {	
-	LM_INFO("socket_cb\n");
+	struct jsonrpc_server *server = (struct jsonrpc_server*)arg;
+
 	if (event != EV_READ) {
 		LM_ERR("unexpected socket event (%d)\n", event);
+		handle_server_failure(server);	
 		return;
 	}
-
-	/* struct event *ev = (struct event*)arg; */
 
 	char *netstring;
 
@@ -191,17 +194,18 @@ void socket_cb(int fd, short event, void *arg)
 
 	if (retval != 0) {
 		LM_ERR("bad netstring (%d)\n", retval);
-
+		handle_server_failure(server);
 		return;
 	}	
 
 	struct json_object *res = json_tokener_parse(netstring);
 
-	if (!res) {
+	if (res) {
+		handle_jsonrpc_response(res);
+	} else {
 		LM_ERR("netstring could not be parsed: (%s)\n", netstring);
-		return;
+		handle_server_failure(server);
 	}
-	handle_jsonrpc_response(res);
 	pkg_free(netstring);
 }
 
@@ -357,13 +361,15 @@ int connect_server(struct jsonrpc_server *server)
 	int sockfd = socket(AF_INET,SOCK_STREAM,0);
 
 	if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr_in))) {
-		LM_ERR("error connecting to %s on port %d... %s\n", server->host, server->port, strerror(errno));
+		LM_WARN("Failed to connect to %s on port %d... %s\n", server->host, server->port, strerror(errno));
+		handle_server_failure(server);
 		return -1;
 	}
 
 	if (set_non_blocking(sockfd) != 0)
 	{
-		LM_ERR("Failed to set socket (%s:%d) to not block\n", server->host, server->port);
+		LM_WARN("Failed to set socket (%s:%d) to non blocking.\n", server->host, server->port);
+		handle_server_failure(server);
 		return -1;
 	}
 
@@ -372,8 +378,9 @@ int connect_server(struct jsonrpc_server *server)
 
 	struct event *socket_ev = pkg_malloc(sizeof(struct event));
 
-	event_set(socket_ev, sockfd, EV_READ | EV_PERSIST, socket_cb, socket_ev);
+	event_set(socket_ev, sockfd, EV_READ | EV_PERSIST, socket_cb, server);
 	event_add(socket_ev, NULL);
+	server->ev = socket_ev;
 	return 0;
 }
 
@@ -390,13 +397,78 @@ int  connect_servers(struct jsonrpc_server_group *group)
 			{
 				connected_servers++;
 				LM_INFO("Connected to host %s on port %d\n", s->host, s->port);
-			} else {
-				LM_WARN("Failed to connect to host %s on port %d\n", s->host, s->port);
 			}
 			if (first == NULL) first = s;
 		}
 	}
 	return connected_servers;
+}
+
+void reconnect_cb(int fd, short event, void *arg)
+{
+	LM_INFO("Attempting to reconnect now.");
+	struct jsonrpc_server *server = (struct jsonrpc_server*)arg;
+	
+	if (server->status == JSONRPC_SERVER_CONNECTED) {
+		LM_WARN("Trying to connect an already connected server.");
+		return;
+	}
+
+	if (server->ev != NULL) {
+		event_del(server->ev);
+		pkg_free(server->ev);
+		server->ev = NULL;
+	}
+
+	close(fd);
+	pkg_free(server->timer);
+
+	connect_server(server);
+}
+
+int handle_server_failure(struct jsonrpc_server *server)
+{
+	LM_INFO("Setting timer to reconnect to %s on port %d in %d seconds.\n", server->host, server->port, JSONRPC_RECONNECT_INTERVAL);
+
+	if (server->socket)
+		close(server->socket);
+	server->socket = 0;
+	if (server->ev != NULL) {
+		event_del(server->ev);
+		pkg_free(server->ev);
+		server->ev = NULL;
+	}
+	server->status = JSONRPC_SERVER_FAILURE;
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+	
+	if (timerfd == -1) {
+		LM_ERR("Could not create timerfd to reschedule connection. No further attempts will be made to reconnect this server.");
+		return -1;
+	}
+
+	struct itimerspec *itime = pkg_malloc(sizeof(struct itimerspec));
+		   
+	itime->it_interval.tv_sec = 0;
+	itime->it_interval.tv_nsec = 0;
+	
+	itime->it_value.tv_sec = JSONRPC_RECONNECT_INTERVAL;
+	itime->it_value.tv_nsec = 0;
+	
+	if (timerfd_settime(timerfd, 0, itime, NULL) == -1) 
+	{
+		LM_ERR("Could not set timer to reschedule connection. No further attempts will be made to reconnect this server.");
+		return -1;
+	}
+	LM_INFO("timerfd value is %d\n", timerfd);
+	struct event *timer_ev = pkg_malloc(sizeof(struct event));
+	event_set(timer_ev, timerfd, EV_READ, reconnect_cb, server); 
+	if(event_add(timer_ev, NULL) == -1) {
+		LM_ERR("event_add failed while rescheduling connection (%s). No further attempts will be made to reconnect this server.", strerror(errno));
+		return -1;
+	}
+	server->ev = timer_ev;
+	server->timer = itime;
+	return 0;
 }
 
 
