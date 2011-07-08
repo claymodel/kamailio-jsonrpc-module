@@ -1,9 +1,26 @@
-/*
-* This code is in the public domain.
-* https://github.com/PeterScott/netstring-c/
-*/
-
-/* Streaming API for netstrings. */
+/**
+ * $Id$
+ *
+ * Copyright (C) 2011 Flowroute LLC (flowroute.com)
+ *
+ * This file is part of Kamailio, a free SIP server.
+ *
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version
+ *
+ *
+ * This file is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -14,7 +31,6 @@
 
 #include "../../sr_module.h"
 #include "../../mem/mem.h"
-
 
 
 int netstring_read_fd(int fd, char **netstring) {
@@ -152,13 +168,13 @@ size_t netstring_encode_new(char **netstring, char *data, size_t len) {
   size_t num_len = 1;
 
   if (len == 0) {
-    ns = malloc(3);
+    ns = pkg_malloc(3);
     ns[0] = '0';
     ns[1] = ':';
     ns[2] = ',';
   } else {
     num_len = (size_t)ceil(log10((double)len + 1));
-    ns = malloc(num_len + len + 2);
+    ns = pkg_malloc(num_len + len + 2);
     sprintf(ns, "%lu:", (unsigned long)len);
     memcpy(ns + num_len + 1, data, len);
     ns[num_len + len + 1] = ',';

@@ -4,6 +4,7 @@
 *.lst
 *.tar.gz
 *.swp
+*.swo
 tags
 TAGS
 doc/*.txt

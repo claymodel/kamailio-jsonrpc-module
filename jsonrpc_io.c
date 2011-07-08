@@ -28,6 +28,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <event.h>
+#include <sys/timerfd.h>
 
 #include "../../sr_module.h"
 #include "../../route.h"
@@ -40,67 +41,51 @@
 #include "netstring.h"
 
 
-int sockfd, cmd_pipe;
-struct sockaddr_in  server;
+struct jsonrpc_server {
+	char *host;
+	int  port, socket, status;
+	struct jsonrpc_server *next;
+};
 
-void socket_cb(int fd, short event, void *arg);
-void cmd_pipe_cb(int fd, short event, void *arg);
+struct jsonrpc_server_group {
+	struct jsonrpc_server *next_server;
+	int    priority;
+	struct jsonrpc_server_group *next_group;
+};
 
 struct tm_binds tmb;
 
-int setnonblock(int fd)
+struct jsonrpc_server_group *server_group;
+
+void socket_cb(int fd, short event, void *arg);
+void cmd_pipe_cb(int fd, short event, void *arg);
+int  set_non_blocking(int fd);
+int  parse_servers(char *_servers, struct jsonrpc_server_group **group_ptr);
+int  connect_servers(struct jsonrpc_server_group *group);
+int  connect_server(struct jsonrpc_server *server);
+
+int jsonrpc_io_child_process(int cmd_pipe, char* _servers)
 {
-	int flags;
-
-	flags = fcntl(fd, F_GETFL);
-	if (flags < 0)
-		return flags;
-	flags |= O_NONBLOCK;
-	if (fcntl(fd, F_SETFL, flags) < 0)
-		return -1;
-
-	return 0;
-}
-
-int jsonrpc_io_child_process(int _cmd_pipe, char* host, int port) {
-	cmd_pipe = _cmd_pipe;
-  struct event_base *evbase = event_init();
-
-	struct hostent *hp;
-  server.sin_family = AF_INET;
-  server.sin_port = htons(port);
-
-	hp = gethostbyname(host);
-	if (hp == NULL) {
-		LM_ERR("gethostbyname(%s) failed with h_errno=%d.\n", host, h_errno);
+	if (parse_servers(_servers, &server_group) != 0)
+	{
+		LM_ERR("servers parameter could not be parsed\n");
 		return -1;
 	}
-	memcpy(&(server.sin_addr.s_addr), hp->h_addr, hp->h_length);
 
-	sockfd = socket(AF_INET,SOCK_STREAM,0);
-	
-  if (connect(sockfd, (struct sockaddr *)&server, sizeof(server))) {
-    LM_ERR("error connecting to %s on port %d... %s\n", remote_host, remote_port, strerror(errno));
-		return -1;
-  }
-
-	setnonblock(sockfd);
-	setnonblock(cmd_pipe);
-
-	struct event pipe_ev, socket_ev;
-	
 	event_init();
-
-	event_set(&socket_ev, sockfd, EV_READ | EV_PERSIST, socket_cb, &socket_ev);
-	event_add(&socket_ev, NULL);
 	
+	struct event pipe_ev;
+	set_non_blocking(cmd_pipe);
 	event_set(&pipe_ev, cmd_pipe, EV_READ | EV_PERSIST, cmd_pipe_cb, &pipe_ev);
 	event_add(&pipe_ev, NULL);
-	
+
+	if (!connect_servers(server_group))
+	{
+		LM_ERR("failed to connect to any servers\n");
+		return -1;
+	}
+
 	event_dispatch();
-	close(sockfd);
-	close(cmd_pipe);
-	//free(evbase);
 	return 0;
 }
 
@@ -109,14 +94,13 @@ int result_cb(json_object *result, char *data) {
 
 	pv_spec_t *dst = cmd->cb_pv;
 	pv_value_t val;
-	
+
 	const char* res = json_object_get_string(result);
-	
-	
+
 	val.rs.s = (char*)res;
 	val.rs.len = strlen(res);
 	val.flags = PV_VAL_STR;
-	
+
 	dst->setf(0, &dst->pvp, (int)EQ_T, &val);
 
 	int n;
@@ -124,7 +108,7 @@ int result_cb(json_object *result, char *data) {
 	struct action *a = main_rt.rlist[n];
 
 	tmb.t_continue(cmd->t_hash, cmd->t_label, a);	
-	
+
 	json_object_put(result);
 	free_pipe_cmd(cmd);
 	return 0;
@@ -136,11 +120,11 @@ int (*cb)(json_object*, char*) = &result_cb;
 void cmd_pipe_cb(int fd, short event, void *arg)
 {
 	struct jsonrpc_pipe_cmd *cmd;
-	struct event *ev = (struct event*)arg;
+	/* struct event *ev = (struct event*)arg; */
 
 	if (read(fd, &cmd, sizeof(cmd)) != sizeof(cmd)) {
 		LM_ERR("failed to read from command pipe: %s\n",
-			strerror(errno));
+				strerror(errno));
 	}
 
 	enum jsonrpc_t *t = JSONRPC_REQUEST;
@@ -154,32 +138,63 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 	char *ns; size_t bytes;
 	bytes = netstring_encode_new(&ns, json, (size_t)strlen(json));
 
-	if (send(sockfd,ns,bytes,0) != bytes) {
-		LM_ERR("send failed!!!!!!!\n");
+	struct jsonrpc_server_group *g;
+	int sent = 0;
+	for (g = server_group; g != NULL; g = g->next_group)
+	{
+		struct jsonrpc_server *s, *first = NULL;
+		for (s = g->next_server; s != first; s = s->next)
+		{
+			if (first == NULL) first = s;
+			if (s->status == JSONRPC_SERVER_CONNECTED) {
+				if (send(s->socket, ns, bytes, 0) == bytes)
+				{
+					sent = 1;
+					g->next_server = s->next;
+					LM_INFO("Message Sent (%d bytes)\n", bytes);
+					break;
+				} else {
+					s->status = JSONRPC_SERVER_FAILURE;
+				}
+			}
+		}
+		if (sent) {
+			break;
+		} else {
+			LM_WARN("Failed to send on priority group %d... proceeding to next priority group.\n", g->priority);
+			
+		}
 	}
-	free(ns);
+
+	if (!sent) {
+		LM_ERR("Request could not be sent... no more failover groups.\n");
+		/* TODO: Cancel Transaction */
+	}
+	
+	pkg_free(ns);
 	json_object_put(req);
 }
 
 void socket_cb(int fd, short event, void *arg)
 {	
+	LM_INFO("socket_cb\n");
 	if (event != EV_READ) {
 		LM_ERR("unexpected socket event (%d)\n", event);
 		return;
 	}
-		
-	struct event *ev = (struct event*)arg;
-	
+
+	/* struct event *ev = (struct event*)arg; */
+
 	char *netstring;
 
 	int retval = netstring_read_fd(fd, &netstring);
-	
+
 	if (retval != 0) {
 		LM_ERR("bad netstring (%d)\n", retval);
-		
+
 		return;
 	}	
-		
+
 	struct json_object *res = json_tokener_parse(netstring);
 
 	if (!res) {
@@ -190,7 +205,203 @@ void socket_cb(int fd, short event, void *arg)
 	pkg_free(netstring);
 }
 
-void free_pipe_cmd(struct jsonrpc_pipe_cmd *cmd) {
+int set_non_blocking(int fd)
+{
+	int flags;
+
+	flags = fcntl(fd, F_GETFL);
+	if (flags < 0)
+		return flags;
+	flags |= O_NONBLOCK;
+	if (fcntl(fd, F_SETFL, flags) < 0)
+		return -1;
+
+	return 0;
+}
+
+int parse_servers(char *_servers, struct jsonrpc_server_group **group_ptr)
+{
+	char cpy[strlen(_servers)+1];
+	char *servers = strcpy(cpy, _servers);
+
+	struct jsonrpc_server_group *group = NULL;
+
+	/* parse servers string */
+	char *token = strtok(servers, ":");
+	while (token != NULL) 
+	{
+		char *host, *port_s, *priority_s, *tail;
+		int port, priority;
+		host = token;
+
+		/* validate domain */
+		if (!(isalpha(host[0]) || isdigit(host[0]))) {
+			LM_ERR("invalid domain (1st char is '%c')\n", host[0]);
+			return -1;
+		}
+		int i;
+		for (i=1; i<strlen(host)-1; i++)
+		{
+			if(!(isalpha(host[i]) || isdigit(host[i]) || host[i] == '-' || host[i] == '.'))
+			{
+				LM_ERR("invalid domain (char %d is %c)\n", i, host[i]);
+				return -1;
+			}
+		}
+		if (!(isalpha(host[i]) || isdigit(host[i]))) {
+			LM_ERR("invalid domain (char %d (last) is %c)\n", i, host[i]);
+			return -1;
+		}
+
+		/* convert/validate port */
+		port_s = strtok(NULL, ",");
+		if (port_s == NULL || !(port = strtol(port_s, &tail, 0)) || strlen(tail)) 
+		{
+			LM_ERR("invalid port: %s\n", port_s);
+			return -1;
+		}
+
+		/* convert/validate priority */
+		priority_s = strtok(NULL, " ");
+		if (priority_s == NULL || !(priority = strtol(priority_s, &tail, 0)) || strlen(tail)) 
+		{
+			LM_ERR("invalid priority: %s\n", priority_s);
+			return -1;
+		}
+
+	
+		struct jsonrpc_server *server = pkg_malloc(sizeof(struct jsonrpc_server));
+		char *h = pkg_malloc(strlen(host)+1);
+		strcpy(h,host);
+		server->host = h;
+		server->port = port;
+		server->status = JSONRPC_SERVER_DISCONNECTED;
+		server->socket = 0;
+
+		int group_cnt = 0;
+
+		/* search for a server group with this server's priority */
+		struct jsonrpc_server_group *selected_group = NULL;
+		for (selected_group=group; selected_group != NULL; selected_group=selected_group->next_group)
+		{
+			if (selected_group->priority == priority) break;
+		}
+		
+		if (selected_group == NULL) {
+			group_cnt++;
+			LM_INFO("Creating group for priority %d\n", priority);
+
+			/* this is the first server for this priority... link it to itself */
+			server->next = server;
+			
+			selected_group = pkg_malloc(sizeof(struct jsonrpc_server_group));
+			selected_group->priority = priority;
+			selected_group->next_server = server;
+			
+			/* insert the group properly in the linked list */
+			struct jsonrpc_server_group *x, *pg;
+			pg = NULL;
+			if (group == NULL) 
+			{
+				group = selected_group;
+				group->next_group = NULL;
+			} else {
+				for (x = group; x != NULL; x = x->next_group) 
+				{
+					if (priority > x->priority)
+					{
+						if (pg == NULL)
+						{
+							group = selected_group;
+						} else {
+							pg->next_group = selected_group;
+						}
+						selected_group->next_group = x;
+						break;
+					} else if (x->next_group == NULL) {
+						x->next_group = selected_group;
+						break;
+					} else {
+						pg = x;
+					}
+				}
+			}
+		} else {
+			LM_ERR("Using existing group for priority %d\n", priority);
+			server->next = selected_group->next_server->next;
+			selected_group->next_server->next = server;
+		}
+
+		token = strtok(NULL, ":");
+	}
+
+	*group_ptr = group;
+	return 0;
+}
+
+int connect_server(struct jsonrpc_server *server) 
+{	
+	struct sockaddr_in  server_addr;
+	struct hostent      *hp;
+
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port   = htons(server->port);
+
+	hp = gethostbyname(server->host);
+	if (hp == NULL) {
+		LM_ERR("gethostbyname(%s) failed with h_errno=%d.\n", server->host, h_errno);
+		return -1;
+	}
+	memcpy(&(server_addr.sin_addr.s_addr), hp->h_addr, hp->h_length);
+
+	int sockfd = socket(AF_INET,SOCK_STREAM,0);
+
+	if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr_in))) {
+		LM_ERR("error connecting to %s on port %d... %s\n", server->host, server->port, strerror(errno));
+		return -1;
+	}
+
+	if (set_non_blocking(sockfd) != 0)
+	{
+		LM_ERR("Failed to set socket (%s:%d) to not block\n", server->host, server->port);
+		return -1;
+	}
+
+	server->socket = sockfd;
+	server->status = JSONRPC_SERVER_CONNECTED;
+
+	struct event *socket_ev = pkg_malloc(sizeof(struct event));
+
+	event_set(socket_ev, sockfd, EV_READ | EV_PERSIST, socket_cb, socket_ev);
+	event_add(socket_ev, NULL);
+	return 0;
+}
+
+int  connect_servers(struct jsonrpc_server_group *group)
+{
+	int connected_servers = 0;
+	for (;group != NULL; group = group->next_group)
+	{
+		struct jsonrpc_server *s, *first = NULL;
+		LM_INFO("Connecting to servers for priority %d:\n", group->priority);
+		for (s=group->next_server;s!=first;s=s->next)
+		{
+			if (connect_server(s) == 0) 
+			{
+				connected_servers++;
+				LM_INFO("Connected to host %s on port %d\n", s->host, s->port);
+			} else {
+				LM_WARN("Failed to connect to host %s on port %d\n", s->host, s->port);
+			}
+			if (first == NULL) first = s;
+		}
+	}
+	return connected_servers;
+}
+
+
+void free_pipe_cmd(struct jsonrpc_pipe_cmd *cmd) 
+{
 	if (cmd->method) 
 		shm_free(cmd->method);
 	if (cmd->params)

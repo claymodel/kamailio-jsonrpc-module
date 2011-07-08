@@ -26,21 +26,26 @@
 #define _JSONRPC_IO_H_
 
 #define JSONRPC_BUFFER_SIZE 2048
-
 #include "../../route_struct.h"
 #include "../../pvar.h"
 
+/*
 static char* remote_host;
 static int   remote_port;
+*/
+#define JSONRPC_SERVER_CONNECTED    1
+#define JSONRPC_SERVER_DISCONNECTED 2
+#define JSONRPC_SERVER_FAILURE      3
 
-struct jsonrpc_pipe_cmd {
+struct jsonrpc_pipe_cmd 
+{
 	char *method, *params, *cb_route;
 	unsigned int t_hash, t_label;
 	pv_spec_t *cb_pv;
 	struct sip_msg *msg;
 };
 
-int jsonrpc_io_child_process(int data_pipe, char* host, int port);
+int jsonrpc_io_child_process(int data_pipe, char* servers);
 void free_pipe_cmd(struct jsonrpc_pipe_cmd *cmd); 
 
 #endif /* _JSONRPC_IO_H_ */

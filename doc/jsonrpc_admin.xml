@@ -63,35 +63,19 @@
 	<section>
 		<title>Exported Parameters</title>
 		<section>
-			<title><varname>remote_host</varname> (string)</title>
+			<title><varname>servers</varname> (string)</title>
 			<para>
-				The hostname for the remote jsonrpc service.
+				The servers providing the remote jsonrpc service. Format is "host1:port1,priority1 host2:port2,priority2". Requests to servers of the same priority will be distributed evenly (round robin). Server groups with higher priority are used first. 
 			</para>
 			<example>
 				<title>Set <varname>remote_host</varname> parameter</title>
 				<programlisting format="linespecific">
 ...
-modparam("jsonrpc", "remote_host", "localhost")
+modparam("jsonrpc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server:9999,1")
 ...
 				</programlisting>
 			</example>
 		</section>
-		<section>
-			<title><varname>remote_port</varname> (int)</title>
-			<para>
-				The port for the remote jsonrpc service.
-			</para>
-			<example>
-				<title>Set <varname>remote_port</varname> parameter</title>
-				<programlisting format="linespecific">
-...
-modparam("jsonrpc", "remote_port", 9999)
-...
-				</programlisting>
-			</example>
-		</section>
-	</section>
-	<section>
 		<title>Exported Functions</title>
 		<section>
 			<title>

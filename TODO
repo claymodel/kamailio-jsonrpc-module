@@ -1,6 +1,8 @@
 * Support Notifications
-* Support Multiple Servers -- LB & Failover
+* Handle jsonrpc error replies
 * Implement Timeouts
 * Close/reopen socket after R&W error or bad netstring received
 * Handle OOM errors on malloc
+* Handle missing event ids for responses
+* Register callbacks to TM module for cancelled transactions
 

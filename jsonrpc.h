@@ -30,8 +30,6 @@
 
 #include <json.h>
 
-static int rpc_htable_size;
-
 enum jsonrpc_t{
 	JSONRPC_REQUEST,
 	JSONRPC_REPLY,

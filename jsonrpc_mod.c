@@ -46,9 +46,10 @@ static int mod_init(void);
 static int child_init(int);
 static int fixup_request(void** param, int param_no);
 static int fixup_request_free(void** param, int param_no);
-int fixup_pvar_shm(void** param, int param_no);
+int        fixup_pvar_shm(void** param, int param_no);
 
-int pipe_fds[2] = {-1,-1};
+char *servers_param;
+int  pipe_fds[2] = {-1,-1};
 
 struct tm_binds tmb;
 
@@ -65,9 +66,7 @@ static cmd_export_t cmds[]={
  * Script Parameters
  */
 static param_export_t mod_params[]={
-	{"remote_host", STR_PARAM, &remote_host},
-	{"remote_port",	INT_PARAM, &remote_port},
-	{"rpc_htable_size",	INT_PARAM, &rpc_htable_size},
+	{"servers", STR_PARAM, &servers_param},
 	{ 0,0,0 }
 };
 
@@ -104,12 +103,8 @@ static int mod_init(void) {
 	if (load_tm( &tmb )==-1)
 		return -1;
 
-	if (remote_host == NULL) {
-		LM_ERR("remote_host parameter missing.\n");
-		return -1;
-	}
-	if (remote_port == 0) {
-		LM_ERR("remote_port parameter missing.\n");
+	if (servers_param == NULL) {
+		LM_ERR("servers parameter missing.\n");
 		return -1;
 	}
 
@@ -119,10 +114,7 @@ static int mod_init(void) {
 		LM_ERR("pipe() failed\n");
 		return -1;
 	}
-
-	if (rpc_htable_size == 0) {
-		rpc_htable_size = JSONRPC_DEFAULT_HTABLE_SIZE;
-	}
+	
 	return(0);
 }
 
@@ -142,7 +134,7 @@ static int child_init(int rank)
 	if(pid==0){
 		/* child */
 		close(pipe_fds[1]);
-		return jsonrpc_io_child_process(pipe_fds[0], remote_host, remote_port);
+		return jsonrpc_io_child_process(pipe_fds[0], servers_param);
 	}
 	return 0;
 }
