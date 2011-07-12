@@ -33,7 +33,7 @@
 #include <json.h>
 
 json_object* build_jsonrpc_notification(char *method, json_object *params); 
-json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*));
+json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*, int));
 int handle_jsonrpc_response(json_object *response);
 
 #endif /* _JSONRPC_H_ */

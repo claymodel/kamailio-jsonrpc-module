@@ -32,14 +32,14 @@
 
 
 struct tm_binds tmb;
-
 static char *shm_strdup(str *src);
 
-int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_route, char* _cb_pv)
+int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_route, char* _err_route, char* _cb_pv)
 {
   str method;
   str params;
-  str cb_route;	
+  str cb_route;
+  str err_route;
 	
 
 	if (fixup_get_svalue(_m, (gparam_p)_method, &method) != 0) {
@@ -54,7 +54,12 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 		LM_ERR("cannot get cb_route value\n");
 		return -1;
 	}
-	
+
+	if (fixup_get_svalue(_m, (gparam_p)_err_route, &err_route) != 0) {
+		LM_ERR("cannot get err_route value\n");
+		return -1;
+	}
+
 	tm_cell_t *t = 0;
 	t = tmb.t_gett();
 	if (t==NULL || t==T_UNDEFINED)
@@ -67,7 +72,7 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 		t = tmb.t_gett();
 		if (t==NULL || t==T_UNDEFINED)
 		{
-			LM_ERR("cannot lookup the transaction\n");
+			LM_ERR("cannot look up the transaction\n");
 			return -1;
 		}
 	}
@@ -90,6 +95,7 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 	cmd->method = shm_strdup(&method);
 	cmd->params = shm_strdup(&params);
 	cmd->cb_route = shm_strdup(&cb_route);
+	cmd->err_route = shm_strdup(&err_route);
 	cmd->cb_pv = cb_pv;
 	cmd->msg = _m;
 	cmd->t_hash = hash_index;

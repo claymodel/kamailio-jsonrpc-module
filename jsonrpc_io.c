@@ -93,7 +93,8 @@ int jsonrpc_io_child_process(int cmd_pipe, char* _servers)
 }
 
 
-int result_cb(json_object *result, char *data) {
+int result_cb(json_object *result, char *data, int error) 
+{
 	struct jsonrpc_pipe_cmd *cmd = (struct jsonrpc_pipe_cmd*)data;
 
 	pv_spec_t *dst = cmd->cb_pv;
@@ -108,9 +109,13 @@ int result_cb(json_object *result, char *data) {
 	dst->setf(0, &dst->pvp, (int)EQ_T, &val);
 
 	int n;
-	n = route_get(&main_rt, cmd->cb_route);
-	struct action *a = main_rt.rlist[n];
+	if (error) {
+		n = route_get(&main_rt, cmd->err_route);
+	} else {
+		n = route_get(&main_rt, cmd->cb_route);
+	}
 
+	struct action *a = main_rt.rlist[n];
 	tmb.t_continue(cmd->t_hash, cmd->t_label, a);	
 
 	json_object_put(result);
@@ -119,7 +124,7 @@ int result_cb(json_object *result, char *data) {
 }
 
 
-int (*res_cb)(json_object*, char*) = &result_cb;
+int (*res_cb)(json_object*, char*, int) = &result_cb;
 
 
 void cmd_pipe_cb(int fd, short event, void *arg)

@@ -55,7 +55,7 @@ struct tm_binds tmb;
  * Exported Functions
  */
 static cmd_export_t cmds[]={
-	{"jsonrpc_request", (cmd_function)jsonrpc_request, 4, fixup_request, fixup_request_free, ANY_ROUTE},
+	{"jsonrpc_request", (cmd_function)jsonrpc_request, 5, fixup_request, fixup_request_free, ANY_ROUTE},
 	{"jsonrpc_notification", (cmd_function)jsonrpc_notification, 2, fixup_notification, 0, ANY_ROUTE},
 	{0, 0, 0, 0, 0, 0}
 };
@@ -142,12 +142,12 @@ static int child_init(int rank)
 
 static int fixup_request(void** param, int param_no)
 {
-  if (param_no <= 3) {
+  if (param_no <= 4) {
 		return fixup_spve_null(param, 1);
-	} else if (param_no == 4) {
+	} else if (param_no == 5) {
 		return fixup_pvar_null(param, 1);
 	}
-	LM_ERR("jsonrpc_request takes exactly 4 parameters.\n");
+	LM_ERR("jsonrpc_request takes exactly 5 parameters.\n");
 	return -1;
 }
 
@@ -162,11 +162,11 @@ static int fixup_notification(void** param, int param_no)
 
 static int fixup_request_free(void** param, int param_no)
 {
-  if (param_no <= 3) {
+  if (param_no <= 4) {
 		return 0;
-	} else if (param_no == 4) {
+	} else if (param_no == 5) {
 		return fixup_free_pvar_null(param, 1);
 	}
-	LM_ERR("jsonrpc_request takes exactly 4 parameters.\n");
+	LM_ERR("jsonrpc_request takes exactly 5 parameters.\n");
 	return -1;
 }

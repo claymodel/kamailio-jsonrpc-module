@@ -36,9 +36,9 @@ typedef struct jsonrpc_event jsonrpc_event_t;
 
 struct jsonrpc_event {
 	int id;
-	int (*cbfunc)(json_object*, char*);
-	char *cbdata;
 	jsonrpc_event_t *next;
+	int (*cbfunc)(json_object*, char*, int);
+	char *cbdata;
 };
 
 struct jsonrpc_event * event_table[JSONRPC_DEFAULT_HTABLE_SIZE] = {0};
@@ -48,7 +48,7 @@ struct jsonrpc_event* get_event(int id);
 int store_event(struct jsonrpc_event* ev);
 
 
-json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*))
+json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*, int))
 {
 	if (next_id>JSONRPC_MAX_ID) {
 		next_id = 1;
@@ -95,10 +95,21 @@ int handle_jsonrpc_response(json_object *response)
 		json_object_put(response);
 		return -1;
 	}
-	
+
 	json_object *result = json_object_object_get(response, "result");
 	
-	ev->cbfunc(result, ev->cbdata);
+	if (result) {
+		ev->cbfunc(result, ev->cbdata, 0);
+	} else {
+		json_object *error = json_object_object_get(response, "error");
+		if (error) {
+			ev->cbfunc(error, ev->cbdata, 1);
+		} else {
+			LM_ERR("Response received with neither a result nor an error.\n");
+			return -1;
+		}
+	}
+
 	json_object_put(response);
 	pkg_free(ev);
 	return 1;
@@ -137,8 +148,6 @@ struct jsonrpc_event* get_event(int id) {
 int store_event(struct jsonrpc_event* ev) {
 	int key = id_hash(ev->id);
 	struct jsonrpc_event* existing;
-
-//	LM_INFO("storing rpc id %d\n", ev->id);
 
 	if ((existing = event_table[key])) { /* collision */
 		struct jsonrpc_event* i;

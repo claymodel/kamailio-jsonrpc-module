@@ -32,12 +32,12 @@
 #define JSONRPC_SERVER_DISCONNECTED 2
 #define JSONRPC_SERVER_FAILURE      3
 
-/* interval at which failed servers are retried */
+/* interval (in seconds) at which failed servers are retried */
 #define JSONRPC_RECONNECT_INTERVAL  3
 
 struct jsonrpc_pipe_cmd 
 {
-	char *method, *params, *cb_route;
+	char *method, *params, *cb_route, *err_route;
 	unsigned int t_hash, t_label, notify_only;
 	pv_spec_t *cb_pv;
 	struct sip_msg *msg;
