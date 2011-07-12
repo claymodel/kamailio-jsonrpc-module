@@ -28,16 +28,12 @@
 #define JSONRPC_DEFAULT_HTABLE_SIZE 500
 #define JSONRPC_MAX_ID 1000000
 
+#define JSONRPC_INTERNAL_SERVER_ERROR -32603
+
 #include <json.h>
 
-enum jsonrpc_t{
-	JSONRPC_REQUEST,
-	JSONRPC_REPLY,
-	JSONRPC_ERROR,
-	JSONRPC_NOTIFICATION
-};
-
-json_object* build_jsonrpc_request(enum jsonrpc_t *req_type, char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*));
+json_object* build_jsonrpc_notification(char *method, json_object *params); 
+json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*));
 int handle_jsonrpc_response(json_object *response);
 
 #endif /* _JSONRPC_H_ */

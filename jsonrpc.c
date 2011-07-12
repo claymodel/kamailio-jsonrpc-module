@@ -48,7 +48,7 @@ struct jsonrpc_event* get_event(int id);
 int store_event(struct jsonrpc_event* ev);
 
 
-json_object* build_jsonrpc_request(enum jsonrpc_t *req_type, char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*))
+json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*))
 {
 	if (next_id>JSONRPC_MAX_ID) {
 		next_id = 1;
@@ -73,6 +73,17 @@ json_object* build_jsonrpc_request(enum jsonrpc_t *req_type, char *method, json_
 
 	return req;
 }
+
+json_object* build_jsonrpc_notification(char *method, json_object *params) 
+{
+	json_object *req = json_object_new_object();
+	json_object_object_add(req, "jsonrpc", json_object_new_string("2.0"));
+	json_object_object_add(req, "method", json_object_new_string(method));
+	json_object_object_add(req, "params", params);
+
+	return req; 
+}
+
 
 int handle_jsonrpc_response(json_object *response)
 {

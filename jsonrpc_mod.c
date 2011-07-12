@@ -25,14 +25,11 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <errno.h>
-//#include <sys/socket.h> 
 
 #include "../../mod_fix.h"
 #include "../../trim.h"
 #include "../../sr_module.h"
-//#include "../../pvar.h"
 #include "../tm/tm_load.h"
-//#include "../tm/t_hooks.h"
 
 #include "jsonrpc_request.h"
 #include "jsonrpc_io.h"
@@ -45,6 +42,7 @@ MODULE_VERSION
 static int mod_init(void);
 static int child_init(int);
 static int fixup_request(void** param, int param_no);
+static int fixup_notification(void** param, int param_no);
 static int fixup_request_free(void** param, int param_no);
 int        fixup_pvar_shm(void** param, int param_no);
 
@@ -58,6 +56,7 @@ struct tm_binds tmb;
  */
 static cmd_export_t cmds[]={
 	{"jsonrpc_request", (cmd_function)jsonrpc_request, 4, fixup_request, fixup_request_free, ANY_ROUTE},
+	{"jsonrpc_notification", (cmd_function)jsonrpc_notification, 2, fixup_notification, 0, ANY_ROUTE},
 	{0, 0, 0, 0, 0, 0}
 };
  
@@ -149,6 +148,15 @@ static int fixup_request(void** param, int param_no)
 		return fixup_pvar_null(param, 1);
 	}
 	LM_ERR("jsonrpc_request takes exactly 4 parameters.\n");
+	return -1;
+}
+
+static int fixup_notification(void** param, int param_no)
+{
+  if (param_no <= 2) {
+		return fixup_spve_null(param, 1);
+	}
+	LM_ERR("jsonrpc_notification takes exactly 2 parameters.\n");
 	return -1;
 }
 

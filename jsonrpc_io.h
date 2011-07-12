@@ -35,12 +35,10 @@
 /* interval at which failed servers are retried */
 #define JSONRPC_RECONNECT_INTERVAL  3
 
-//#define JSONRPC_BUFFER_SIZE 2048
-
 struct jsonrpc_pipe_cmd 
 {
 	char *method, *params, *cb_route;
-	unsigned int t_hash, t_label;
+	unsigned int t_hash, t_label, notify_only;
 	pv_spec_t *cb_pv;
 	struct sip_msg *msg;
 };

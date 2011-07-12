@@ -72,8 +72,8 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 		}
 	}
 
-	unsigned int hash_index = NULL;
-	unsigned int label = NULL;
+	unsigned int hash_index;
+	unsigned int label;
 
 	if (tmb.t_suspend(_m, &hash_index, &label) < 0) {
 		LM_ERR("t_suspend() failed\n");
@@ -101,6 +101,36 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 	}
 
 	return 0;
+}
+
+int jsonrpc_notification(struct sip_msg* _m, char* _method, char* _params)
+{
+	str method;
+	str params;
+
+	if (fixup_get_svalue(_m, (gparam_p)_method, &method) != 0) {
+		LM_ERR("cannot get method value\n");
+		return -1;
+	}
+	if (fixup_get_svalue(_m, (gparam_p)_params, &params) != 0) {
+		LM_ERR("cannot get params value\n");
+		return -1;
+	}
+
+	struct jsonrpc_pipe_cmd *cmd;
+	cmd = (struct jsonrpc_pipe_cmd *) shm_malloc(sizeof(struct jsonrpc_pipe_cmd));
+	memset(cmd, 0, sizeof(struct jsonrpc_pipe_cmd));
+
+	cmd->method = shm_strdup(&method);
+	cmd->params = shm_strdup(&params);
+	cmd->notify_only = 1;
+
+	if (write(cmd_pipe, &cmd, sizeof(cmd)) != sizeof(cmd)) {
+		LM_ERR("failed to write to io pipe: %s\n", strerror(errno));
+		return -1;
+	}
+
+	return 1;
 }
 
 static char *shm_strdup(str *src)

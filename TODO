@@ -1,6 +1,4 @@
 * Handle jsonrpc error replies
 * Implement Timeouts
 * Handle OOM errors on malloc
-* Handle missing event ids for responses
 * Register callbacks to TM module for cancelled transactions?
-* Support Notifications?

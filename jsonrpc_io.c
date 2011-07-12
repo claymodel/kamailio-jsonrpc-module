@@ -92,6 +92,7 @@ int jsonrpc_io_child_process(int cmd_pipe, char* _servers)
 	return 0;
 }
 
+
 int result_cb(json_object *result, char *data) {
 	struct jsonrpc_pipe_cmd *cmd = (struct jsonrpc_pipe_cmd*)data;
 
@@ -117,7 +118,8 @@ int result_cb(json_object *result, char *data) {
 	return 0;
 }
 
-int (*cb)(json_object*, char*) = &result_cb;
+
+int (*res_cb)(json_object*, char*) = &result_cb;
 
 
 void cmd_pipe_cb(int fd, short event, void *arg)
@@ -130,9 +132,15 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 				strerror(errno));
 	}
 
-	enum jsonrpc_t *t = JSONRPC_REQUEST;
-	json_object *params = json_tokener_parse(cmd->params);;
-	json_object *req = build_jsonrpc_request(t, cmd->method, params, (char*)cmd, cb);
+	json_object *params = json_tokener_parse(cmd->params);
+	
+	json_object *req;
+	if (cmd->notify_only) {
+		req = build_jsonrpc_notification(cmd->method, params);
+	} else {
+		req = build_jsonrpc_request(cmd->method, params, (char*)cmd, res_cb);
+	}
+
 	if (!req) {
 		LM_ERR("failed to build jsonrpc_request (method: %s, params: %s)\n", cmd->method, cmd->params);	
 	}
