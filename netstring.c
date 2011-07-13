@@ -67,6 +67,10 @@ int netstring_read_fd(int fd, char **netstring) {
 	/* Read the whole string from the buffer */
 	size_t read_len = i+len+1;
 	char *buffer2 = pkg_malloc(read_len);
+	if (!buffer2) {
+		LM_ERR("Out of memory!");
+		return -1;
+	}
 	bytes = recv(fd,buffer2,read_len,0);
 
   /* Make sure we got the whole netstring */
@@ -169,12 +173,20 @@ size_t netstring_encode_new(char **netstring, char *data, size_t len) {
 
   if (len == 0) {
     ns = pkg_malloc(3);
+	if (!ns) {
+		LM_ERR("Out of memory!");
+		return 0;
+	}
     ns[0] = '0';
     ns[1] = ':';
     ns[2] = ',';
   } else {
     num_len = (size_t)ceil(log10((double)len + 1));
     ns = pkg_malloc(num_len + len + 2);
+	if (!ns) {
+		LM_ERR("Out of memory!");
+		return 0;
+	}
     sprintf(ns, "%lu:", (unsigned long)len);
     memcpy(ns + num_len + 1, data, len);
     ns[num_len + len + 1] = ',';

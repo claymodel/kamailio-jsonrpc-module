@@ -34,6 +34,11 @@
 struct tm_binds tmb;
 static char *shm_strdup(str *src);
 
+int memory_error() {
+	LM_ERR("Out of memory!");
+	return -1;
+}
+
 int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_route, char* _err_route, char* _cb_pv)
 {
   str method;
@@ -86,10 +91,15 @@ int jsonrpc_request(struct sip_msg* _m, char* _method, char* _params, char* _cb_
 	}
 
 	struct jsonrpc_pipe_cmd *cmd;
-	cmd = (struct jsonrpc_pipe_cmd *) shm_malloc(sizeof(struct jsonrpc_pipe_cmd));
+	if (!(cmd = (struct jsonrpc_pipe_cmd *) shm_malloc(sizeof(struct jsonrpc_pipe_cmd))))
+		return memory_error();
+
 	memset(cmd, 0, sizeof(struct jsonrpc_pipe_cmd));
 
 	pv_spec_t *cb_pv = (pv_spec_t*)shm_malloc(sizeof(pv_spec_t));
+	if (!cb_pv)
+		return memory_error();
+
 	cb_pv = memcpy(cb_pv, (pv_spec_t *)_cb_pv, sizeof(pv_spec_t));
 
 	cmd->method = shm_strdup(&method);
@@ -124,7 +134,9 @@ int jsonrpc_notification(struct sip_msg* _m, char* _method, char* _params)
 	}
 
 	struct jsonrpc_pipe_cmd *cmd;
-	cmd = (struct jsonrpc_pipe_cmd *) shm_malloc(sizeof(struct jsonrpc_pipe_cmd));
+	if (!(cmd = (struct jsonrpc_pipe_cmd *) shm_malloc(sizeof(struct jsonrpc_pipe_cmd))))
+		return memory_error();
+
 	memset(cmd, 0, sizeof(struct jsonrpc_pipe_cmd));
 
 	cmd->method = shm_strdup(&method);

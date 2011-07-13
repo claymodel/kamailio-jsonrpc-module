@@ -57,6 +57,10 @@ json_object* build_jsonrpc_request(char *method, json_object *params, char *cbda
 	}
 
 	struct jsonrpc_event *ev = pkg_malloc(sizeof(struct jsonrpc_event));
+	if (!ev) {
+		LM_ERR("Out of memory!");
+		return 0;
+	}
 	ev->id = next_id;
 	ev->cbfunc = cbfunc;
 	ev->cbdata = cbdata;
@@ -121,7 +125,6 @@ int id_hash(int id) {
 
 struct jsonrpc_event* get_event(int id) {
 	int key = id_hash(id);
-
 	struct jsonrpc_event *ev, *prev_ev = NULL;
 	ev = event_table[key];
 	

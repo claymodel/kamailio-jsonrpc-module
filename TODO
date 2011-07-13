@@ -1,3 +1,4 @@
-* Implement Timeouts
+* Implement Timeouts (timerfd)
 * Handle OOM errors on malloc
-* Register callbacks to TM module for cancelled transactions?
+* Blackhole responses for cancelled transactions (perhaps send to error route?)
+* "Reliable" Notifications (implement using requests, and failover on error; ignore non-error responses) ?

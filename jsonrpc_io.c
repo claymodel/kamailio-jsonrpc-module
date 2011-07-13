@@ -40,6 +40,7 @@
 #include "jsonrpc.h"
 #include "netstring.h"
 
+#define CHECK_MALLOC(p)  if(!p) {LM_ERR("Out of memory!"); return -1;}
 
 struct jsonrpc_server {
 	char *host;
@@ -288,7 +289,10 @@ int parse_servers(char *_servers, struct jsonrpc_server_group **group_ptr)
 
 	
 		struct jsonrpc_server *server = pkg_malloc(sizeof(struct jsonrpc_server));
+		CHECK_MALLOC(server);
 		char *h = pkg_malloc(strlen(host)+1);
+		CHECK_MALLOC(h);
+
 		strcpy(h,host);
 		server->host = h;
 		server->port = port;
@@ -312,6 +316,7 @@ int parse_servers(char *_servers, struct jsonrpc_server_group **group_ptr)
 			server->next = server;
 			
 			selected_group = pkg_malloc(sizeof(struct jsonrpc_server_group));
+			CHECK_MALLOC(selected_group);
 			selected_group->priority = priority;
 			selected_group->next_server = server;
 			
@@ -367,6 +372,7 @@ int connect_server(struct jsonrpc_server *server)
 	hp = gethostbyname(server->host);
 	if (hp == NULL) {
 		LM_ERR("gethostbyname(%s) failed with h_errno=%d.\n", server->host, h_errno);
+		handle_server_failure(server);
 		return -1;
 	}
 	memcpy(&(server_addr.sin_addr.s_addr), hp->h_addr, hp->h_length);
@@ -390,7 +396,7 @@ int connect_server(struct jsonrpc_server *server)
 	server->status = JSONRPC_SERVER_CONNECTED;
 
 	struct event *socket_ev = pkg_malloc(sizeof(struct event));
-
+	CHECK_MALLOC(socket_ev);
 	event_set(socket_ev, sockfd, EV_READ | EV_PERSIST, socket_cb, server);
 	event_add(socket_ev, NULL);
 	server->ev = socket_ev;
@@ -460,7 +466,7 @@ int handle_server_failure(struct jsonrpc_server *server)
 	}
 
 	struct itimerspec *itime = pkg_malloc(sizeof(struct itimerspec));
-		   
+	CHECK_MALLOC(itime);
 	itime->it_interval.tv_sec = 0;
 	itime->it_interval.tv_nsec = 0;
 	
@@ -474,6 +480,7 @@ int handle_server_failure(struct jsonrpc_server *server)
 	}
 	LM_INFO("timerfd value is %d\n", timerfd);
 	struct event *timer_ev = pkg_malloc(sizeof(struct event));
+	CHECK_MALLOC(timer_ev);
 	event_set(timer_ev, timerfd, EV_READ, reconnect_cb, server); 
 	if(event_add(timer_ev, NULL) == -1) {
 		LM_ERR("event_add failed while rescheduling connection (%s). No further attempts will be made to reconnect this server.", strerror(errno));
