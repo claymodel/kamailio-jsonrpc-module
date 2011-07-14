@@ -1,4 +1,4 @@
-JSON Module
+JsonRpc Module
 
 Matthew Williams
 
@@ -29,8 +29,8 @@ Jordan Levy
 
         4. Exported Functions
 
-              4.1. jsonrpc_request(method, parameters, routename,
-                      result_var)
+              4.1. jsonrpc_request(method, parameters, return_route,
+                      error_route, result_var)
 
    List of Examples
 
@@ -53,7 +53,8 @@ Chapter 1. Admin Guide
 
    4. Exported Functions
 
-        4.1. jsonrpc_request(method, parameters, routename, result_var)
+        4.1. jsonrpc_request(method, parameters, return_route,
+                error_route, result_var)
 
 1. Overview
 
@@ -103,33 +104,43 @@ modparam("jsonrpc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server:
 
 4. Exported Functions
 
-   4.1. jsonrpc_request(method, parameters, routename, result_var)
+   4.1. jsonrpc_request(method, parameters, return_route, error_route,
+          result_var)
 
-4.1.  jsonrpc_request(method, parameters, routename, result_var)
+4.1.  jsonrpc_request(method, parameters, return_route, error_route,
+result_var)
 
-   Invoke the remote 'method' with the given 'parameters'. When the
-   response is received, continue processing of the SIP request with the
-   route[routename].
+   Invokes the remote 'method' with the given 'parameters'. When the
+   response is received, continues processing of the SIP request with the
+   route[return_route]. If a timeout occurs, no servers can be reached, or
+   a jsonrpc error message is received, continues process at
+   route[error_route]. In this case, the result_var will contain one of
+   "timeout", "failure", or the error message received back from the
+   jsonrpc server.
 
-   The method, parameters, and routename can be a static string or a
-   dynamic string value with config variables.
-
-   The result is stored in the pseudo-variable 'destination'. Since this
-   variable is set after the response is recieved, it is possible to use a
-   $var for this parameter.
+   The method, parameters, return_route, and error_route can be a static
+   string or a dynamic string value with config variables.
 
    Since the SIP request handling is resumed in another process, the
    config file execution is lost. As mentioned above, only shared
    variables ($shv, etc) should be used for any value that will be needed
    when the script is resumed.
 
+   The result is stored in the pseudo-variable 'result_var'. Since this
+   variable is set after the response is received, it is possible to use a
+   $var for this parameter.
+
    Example 1.2. jsonrpc_request usage
 ...
-jsonrpc_request("get_user", {'id': 1234}", "RESPONSE", "$var(result)");
+jsonrpc_request("get_user", {'id': 1234}", "RESPONSE", "ERROR", "$var(result)");
 ...
 route[RESPONSE] {
-        xlog("$var(result)");
-        send_reply("404", "Not Found");
-        exit;
+        xlog("Result received: $var(result)");
+        ...
+}
+...
+route[ERROR] {
+        xlog("Error received: $var(result)");
+        ...
 }
 ...

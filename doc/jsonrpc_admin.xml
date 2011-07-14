@@ -81,21 +81,19 @@ modparam("jsonrpc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server:
 		<title>Exported Functions</title>
 		<section>
 			<title>
-				<function moreinfo="none">jsonrpc_request(method, parameters, routename, result_var)</function>
+				<function moreinfo="none">jsonrpc_request(method, parameters, return_route, error_route, result_var)</function>
 			</title>
 			<para>
-				Invoke the remote 'method' with the given 'parameters'. 
-				When the response is received, continue processing of the SIP request
-				with the route[routename].
+				Invokes the remote 'method' with the given 'parameters'. 
+				When the response is received, continues processing of the SIP request
+				with the route[return_route]. If a timeout occurs, no servers can be reached,
+				or a jsonrpc error message is received, continues process at route[error_route].
+				In this case, the result_var will contain one of "timeout", "failure", or the error
+				message received back from the jsonrpc server.
 			</para>
 			<para>
-				The method, parameters, and routename can be a static string or 
+				The method, parameters, return_route, and error_route can be a static string or 
 				a dynamic string value with config variables.
-			</para>
-			<para>
-				The result is stored in the pseudo-variable 'destination'. Since this 
-				variable is set <emphasis>after</emphasis> the response is recieved,
-				it is possible to use a $var for this parameter.
 			</para>
 			<para>
 				Since the SIP request handling is resumed in another process,
@@ -103,16 +101,25 @@ modparam("jsonrpc", "servers", "localhost:9999,2 10.10.0.1:9999,2 backup.server:
 				shared variables ($shv, etc) should be used for any value that
 				will be needed when the script is resumed.
 			</para>
+			<para>
+				The result is stored in the pseudo-variable 'result_var'. Since this 
+				variable is set <emphasis>after</emphasis> the response is received,
+				it is possible to use a $var for this parameter.
+			</para>
 			<example>
 				<title><function>jsonrpc_request</function> usage</title>
 				<programlisting format="linespecific">
 ...
-jsonrpc_request("get_user", {'id': 1234}", "RESPONSE", "$var(result)");
+jsonrpc_request("get_user", {'id': 1234}", "RESPONSE", "ERROR", "$var(result)");
 ...
 route[RESPONSE] {
-	xlog("$var(result)");
-	send_reply("404", "Not Found");
-	exit;
+	xlog("Result received: $var(result)");
+	...
+}
+...
+route[ERROR] {
+	xlog("Error received: $var(result)");
+	...
 }
 ...
 				</programlisting>
