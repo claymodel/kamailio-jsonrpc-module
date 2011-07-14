@@ -31,9 +31,22 @@
 #define JSONRPC_INTERNAL_SERVER_ERROR -32603
 
 #include <json.h>
+#include <event.h>
+
+typedef struct jsonrpc_request jsonrpc_request_t;
+
+struct jsonrpc_request {
+	int id, timerfd;
+	jsonrpc_request_t *next;
+	int (*cbfunc)(json_object*, char*, int);
+	char *cbdata;
+	json_object *payload;
+	struct event *timer_ev; 
+};
 
 json_object* build_jsonrpc_notification(char *method, json_object *params); 
-json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*, int));
+jsonrpc_request_t* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*, int));
 int handle_jsonrpc_response(json_object *response);
-
+void void_jsonrpc_request(int id);
 #endif /* _JSONRPC_H_ */
+

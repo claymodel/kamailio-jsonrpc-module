@@ -40,6 +40,7 @@
 #include "jsonrpc.h"
 #include "netstring.h"
 
+#define CHECK_MALLOC_VOID(p)  if(!p) {LM_ERR("Out of memory!"); return;}
 #define CHECK_MALLOC(p)  if(!p) {LM_ERR("Out of memory!"); return -1;}
 
 struct jsonrpc_server {
@@ -93,6 +94,18 @@ int jsonrpc_io_child_process(int cmd_pipe, char* _servers)
 	return 0;
 }
 
+void timeout_cb(int fd, short event, void *arg) 
+{
+	LM_ERR("message timeout\n");
+	jsonrpc_request_t *req = (jsonrpc_request_t*)arg;
+	json_object *error = json_object_new_string("timeout");
+	void_jsonrpc_request(req->id);
+	close(req->timerfd);
+	event_del(req->timer_ev);
+	pkg_free(req->timer_ev);
+	req->cbfunc(error, req->cbdata, 1);
+	pkg_free(req);
+}
 
 int result_cb(json_object *result, char *data, int error) 
 {
@@ -119,7 +132,6 @@ int result_cb(json_object *result, char *data, int error)
 	struct action *a = main_rt.rlist[n];
 	tmb.t_continue(cmd->t_hash, cmd->t_label, a);	
 
-	json_object_put(result);
 	free_pipe_cmd(cmd);
 	return 0;
 }
@@ -134,23 +146,27 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 	/* struct event *ev = (struct event*)arg; */
 
 	if (read(fd, &cmd, sizeof(cmd)) != sizeof(cmd)) {
-		LM_ERR("failed to read from command pipe: %s\n",
-				strerror(errno));
+		LM_ERR("failed to read from command pipe: %s\n", strerror(errno));
+		return;
 	}
 
 	json_object *params = json_tokener_parse(cmd->params);
-	
-	json_object *req;
+	json_object *payload = NULL;
+	jsonrpc_request_t *req = NULL;
+
 	if (cmd->notify_only) {
-		req = build_jsonrpc_notification(cmd->method, params);
+		payload = build_jsonrpc_notification(cmd->method, params);
 	} else {
 		req = build_jsonrpc_request(cmd->method, params, (char*)cmd, res_cb);
+		if (req)
+			payload = req->payload;
 	}
 
-	if (!req) {
-		LM_ERR("failed to build jsonrpc_request (method: %s, params: %s)\n", cmd->method, cmd->params);	
+	if (!payload) {
+		LM_ERR("Failed to build jsonrpc_request_t (method: %s, params: %s)\n", cmd->method, cmd->params);	
+		return;
 	}
-	char *json = (char*)json_object_get_string(req);
+	char *json = (char*)json_object_get_string(payload);
 
 	char *ns; size_t bytes;
 	bytes = netstring_encode_new(&ns, json, (size_t)strlen(json));
@@ -167,7 +183,6 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 				if (send(s->socket, ns, bytes, 0) == bytes)
 				{
 					sent = 1;
-					LM_INFO("Message Sent (%d bytes)\n", bytes);
 					break;
 				} else {
 					handle_server_failure(s);
@@ -179,17 +194,50 @@ void cmd_pipe_cb(int fd, short event, void *arg)
 			break;
 		} else {
 			LM_WARN("Failed to send on priority group %d... proceeding to next priority group.\n", g->priority);
-			
 		}
 	}
 
-	if (!sent) {
+	if (sent && req) {
+		int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+
+		if (timerfd == -1) {
+			LM_ERR("Could not create timerfd.");
+			return;
+		}
+
+		req->timerfd = timerfd;
+		struct itimerspec *itime = pkg_malloc(sizeof(struct itimerspec));
+		CHECK_MALLOC_VOID(itime);
+		itime->it_interval.tv_sec = 0;
+		itime->it_interval.tv_nsec = 0;
+
+		itime->it_value.tv_sec = JSONRPC_TIMEOUT/1000;
+		itime->it_value.tv_nsec = (JSONRPC_TIMEOUT % 1000) * 1000000;
+		if (timerfd_settime(timerfd, 0, itime, NULL) == -1) 
+		{
+			LM_ERR("Could not set timer.");
+			return;
+		}
+		pkg_free(itime);
+		struct event *timer_ev = pkg_malloc(sizeof(struct event));
+		CHECK_MALLOC_VOID(timer_ev);
+		event_set(timer_ev, timerfd, EV_READ, timeout_cb, req); 
+		if(event_add(timer_ev, NULL) == -1) {
+			LM_ERR("event_add failed while setting request timer (%s).", strerror(errno));
+			return;
+		}
+		req->timer_ev = timer_ev;
+	} else if (!sent) {
 		LM_ERR("Request could not be sent... no more failover groups.\n");
-		/* TODO: Cancel Transaction */
+		if (req) {
+			json_object *error = json_object_new_string("failure");
+			void_jsonrpc_request(req->id);
+			req->cbfunc(error, req->cbdata, 1);
+		}
 	}
-	
+
 	pkg_free(ns);
-	json_object_put(req);
+	json_object_put(payload);
 }
 
 void socket_cb(int fd, short event, void *arg)
@@ -216,6 +264,7 @@ void socket_cb(int fd, short event, void *arg)
 
 	if (res) {
 		handle_jsonrpc_response(res);
+		json_object_put(res);
 	} else {
 		LM_ERR("netstring could not be parsed: (%s)\n", netstring);
 		handle_server_failure(server);
@@ -500,6 +549,8 @@ void free_pipe_cmd(struct jsonrpc_pipe_cmd *cmd)
 		shm_free(cmd->params);
 	if (cmd->cb_route)
 		shm_free(cmd->cb_route);
+	if (cmd->err_route)
+		shm_free(cmd->err_route);
 	if (cmd->cb_pv)
 		shm_free(cmd->cb_pv);
 	shm_free(cmd);

@@ -32,23 +32,15 @@
 
 #include "jsonrpc.h"
 
-typedef struct jsonrpc_event jsonrpc_event_t;
 
-struct jsonrpc_event {
-	int id;
-	jsonrpc_event_t *next;
-	int (*cbfunc)(json_object*, char*, int);
-	char *cbdata;
-};
-
-struct jsonrpc_event * event_table[JSONRPC_DEFAULT_HTABLE_SIZE] = {0};
+jsonrpc_request_t * request_table[JSONRPC_DEFAULT_HTABLE_SIZE] = {0};
 int next_id = 1;
 
-struct jsonrpc_event* get_event(int id);
-int store_event(struct jsonrpc_event* ev);
+jsonrpc_request_t* get_request(int id);
+int store_request(jsonrpc_request_t* req);
 
 
-json_object* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*, int))
+jsonrpc_request_t* build_jsonrpc_request(char *method, json_object *params, char *cbdata, int (*cbfunc)(json_object*, char*, int))
 {
 	if (next_id>JSONRPC_MAX_ID) {
 		next_id = 1;
@@ -56,24 +48,25 @@ json_object* build_jsonrpc_request(char *method, json_object *params, char *cbda
 		next_id++;
 	}
 
-	struct jsonrpc_event *ev = pkg_malloc(sizeof(struct jsonrpc_event));
-	if (!ev) {
+	jsonrpc_request_t *req = pkg_malloc(sizeof(jsonrpc_request_t));
+	if (!req) {
 		LM_ERR("Out of memory!");
 		return 0;
 	}
-	ev->id = next_id;
-	ev->cbfunc = cbfunc;
-	ev->cbdata = cbdata;
-	ev->next = NULL;
-	if (!store_event(ev))
+	req->id = next_id;
+	req->cbfunc = cbfunc;
+	req->cbdata = cbdata;
+	req->next = NULL;
+	req->timer_ev = NULL;
+	if (!store_request(req))
 		return 0;
 
-	json_object *req = json_object_new_object();
+	req->payload = json_object_new_object();
 
-	json_object_object_add(req, "id", json_object_new_int(next_id));
-	json_object_object_add(req, "jsonrpc", json_object_new_string("2.0"));
-	json_object_object_add(req, "method", json_object_new_string(method));
-	json_object_object_add(req, "params", params);
+	json_object_object_add(req->payload, "id", json_object_new_int(next_id));
+	json_object_object_add(req->payload, "jsonrpc", json_object_new_string("2.0"));
+	json_object_object_add(req->payload, "method", json_object_new_string(method));
+	json_object_object_add(req->payload, "params", params);
 
 	return req;
 }
@@ -91,11 +84,11 @@ json_object* build_jsonrpc_notification(char *method, json_object *params)
 
 int handle_jsonrpc_response(json_object *response)
 {
-	struct jsonrpc_event *ev;	
+	jsonrpc_request_t *req;	
 	json_object *_id = json_object_object_get(response, "id");
 	int id = json_object_get_int(_id);
 	
-	if (!(ev = get_event(id))) {
+	if (!(req = get_request(id))) {
 		json_object_put(response);
 		return -1;
 	}
@@ -103,19 +96,25 @@ int handle_jsonrpc_response(json_object *response)
 	json_object *result = json_object_object_get(response, "result");
 	
 	if (result) {
-		ev->cbfunc(result, ev->cbdata, 0);
+		req->cbfunc(result, req->cbdata, 0);
 	} else {
 		json_object *error = json_object_object_get(response, "error");
 		if (error) {
-			ev->cbfunc(error, ev->cbdata, 1);
+			req->cbfunc(error, req->cbdata, 1);
 		} else {
 			LM_ERR("Response received with neither a result nor an error.\n");
 			return -1;
 		}
 	}
-
-	json_object_put(response);
-	pkg_free(ev);
+	
+	if (req->timer_ev) {
+		close(req->timerfd);
+		event_del(req->timer_ev);
+		pkg_free(req->timer_ev);
+	} else {
+		LM_ERR("No timer for req id %d\n", id);
+	}
+	pkg_free(req);
 	return 1;
 }
 
@@ -123,50 +122,53 @@ int id_hash(int id) {
 	return (id % JSONRPC_DEFAULT_HTABLE_SIZE);
 }
 
-struct jsonrpc_event* get_event(int id) {
+jsonrpc_request_t* get_request(int id) {
 	int key = id_hash(id);
-	struct jsonrpc_event *ev, *prev_ev = NULL;
-	ev = event_table[key];
+	jsonrpc_request_t *req, *prev_req = NULL;
+	req = request_table[key];
 	
-	while (ev && ev->id != id) {
-		prev_ev = ev;
-		if (!(ev = ev->next)) {
+	while (req && req->id != id) {
+		prev_req = req;
+		if (!(req = req->next)) {
 			break;
 		};
 	}
 	
-	if (ev && ev->id == id) {
-		if (prev_ev != NULL) {
-			prev_ev-> next = ev->next;
+	if (req && req->id == id) {
+		if (prev_req != NULL) {
+			prev_req-> next = req->next;
 		} else {
-			event_table[key] = NULL;
+			request_table[key] = NULL;
 		}
-		return ev;
+		return req;
 	}
-
-	LM_ERR("event for response id %d (key %d) was not found.\n", id, key);
 	return 0;
 }
 
-int store_event(struct jsonrpc_event* ev) {
-	int key = id_hash(ev->id);
-	struct jsonrpc_event* existing;
+void void_jsonrpc_request(int id) {
+	get_request(id);
+}
 
-	if ((existing = event_table[key])) { /* collision */
-		struct jsonrpc_event* i;
+int store_request(jsonrpc_request_t* req) {
+	int key = id_hash(req->id);
+	jsonrpc_request_t* existing;
+
+	if ((existing = request_table[key])) { /* collision */
+		jsonrpc_request_t* i;
 		for(i=existing; i; i=i->next) {
 			if (i == NULL) {
-				i = ev;
+				i = req;
 				LM_ERR("!!!!!!!");
 				return 1;
 			}
 			if (i->next == NULL) {
-				i->next = ev;
+				i->next = req;
 				return 1;
 			}
 		}
 	} else {
-		event_table[key] = ev;
+		request_table[key] = req;
 	}
 	return 1;
 }
+

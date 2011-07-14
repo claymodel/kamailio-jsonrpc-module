@@ -35,6 +35,9 @@
 /* interval (in seconds) at which failed servers are retried */
 #define JSONRPC_RECONNECT_INTERVAL  3
 
+/* time (in ms) after which the error route is called */
+#define JSONRPC_TIMEOUT 			500
+
 struct jsonrpc_pipe_cmd 
 {
 	char *method, *params, *cb_route, *err_route;
